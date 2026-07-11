@@ -1,2 +1,3 @@
-# mac-status-monitor-widget
-Mac 状态监控小组件
+# Today To Do List
+
+A local Mac widget for managing daily tasks.
