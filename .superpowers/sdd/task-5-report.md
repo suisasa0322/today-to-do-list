@@ -129,3 +129,109 @@ Not performed in this sandbox. Per the task handoff, the controller will run the
 - The sandbox prevented a semantic Playwright GREEN run; the controller must run `pnpm playwright test tests/e2e/todo.spec.ts` outside the managed sandbox.
 - The controller must perform the native movable/non-topmost/restart smoke test as planned.
 - The initial RED could not reach the missing invoke boundary because sandbox restrictions failed earlier at server bind and then Chrome launch; both failure outputs are retained above for transparency.
+
+## Follow-up Review Fixes and Evidence (2026-07-16)
+
+This section supersedes the earlier statement that the controller's native restart smoke test was still pending.
+
+### Review fixes
+
+- Replaced all three absolute `file:///tmp/*.tgz` Playwright resolutions with normal registry-style integrity-only lockfile entries. `package.json` remains pinned to `@playwright/test` `1.61.1`.
+- Confirmed against npm registry metadata that the retained SHA-512 values are the published integrity values for `@playwright/test@1.61.1`, `playwright@1.61.1`, and `playwright-core@1.61.1`.
+- Strengthened the hover assertion to require `opacity: 0` and `pointer-events: none` before hover, then `opacity: 1` and `pointer-events: auto` after hover.
+- Added separate reload assertions after add (restored open), after toggle (restored done), and after delete (still absent).
+- Documented the system Google Chrome prerequisite while retaining the exact required development and test commands.
+
+### Lockfile and configuration checks
+
+Command:
+
+```bash
+pnpm list @playwright/test playwright playwright-core --depth 2
+```
+
+Result: exit 0 and the installed graph is exactly:
+
+```text
+@playwright/test@1.61.1
+└─ playwright@1.61.1
+   └─ playwright-core@1.61.1
+```
+
+Commands:
+
+```bash
+if rg -n "/tmp|file:/" pnpm-lock.yaml; then exit 1; fi
+rg -n "'@playwright/test@1\.61\.1'|playwright@1\.61\.1|playwright-core@1\.61\.1|sha512-8nKv6|sha512-DWnY5|sha512-h7Qlt" pnpm-lock.yaml
+git diff --check
+```
+
+Result: exit 0. The forbidden-path scan printed no matches; all three version/integrity entries were present; `git diff --check` printed no errors.
+
+An attempted `pnpm install --lockfile-only --offline --frozen-lockfile` was intercepted by the managed environment's supply-chain verifier, which attempted registry DNS requests despite offline mode. It was stopped during retry rather than reported as passing. The verifier did state `Lockfile is up to date, resolution step is skipped` on its subsequent dependency-status check, but the successful evidence claimed here is limited to registry metadata verification, the installed dependency graph, explicit path/integrity scans, and Playwright discovery.
+
+### Playwright discovery and browser attempt
+
+Command (dependency auto-verification disabled because the managed verifier attempted network access):
+
+```bash
+PNPM_CONFIG_VERIFY_DEPS_BEFORE_RUN=false pnpm playwright test --list
+```
+
+Result: exit 0:
+
+```text
+Listing tests:
+  todo.spec.ts:7:1 › adds, completes, deletes, and restores a task after restart
+Total: 1 test in 1 file
+```
+
+Focused browser command:
+
+```bash
+PNPM_CONFIG_VERIFY_DEPS_BEFORE_RUN=false pnpm playwright test tests/e2e/todo.spec.ts
+```
+
+Result: exit 1 before any test step. The Vite build passed and Playwright started one test, but the sandbox again terminated system Chrome:
+
+```text
+Error: browserType.launch: Target page, context or browser has been closed
+<process did exit: exitCode=null, signal=SIGABRT>
+exception while trying to kill process: Error: kill EPERM
+```
+
+Semantic Playwright GREEN is still not claimed from this managed sandbox.
+
+### Non-browser tests and builds
+
+Command:
+
+```bash
+PNPM_CONFIG_VERIFY_DEPS_BEFORE_RUN=false pnpm vitest run
+```
+
+Result: exit 0; 2 test files passed and 11 tests passed.
+
+Command:
+
+```bash
+PNPM_CONFIG_VERIFY_DEPS_BEFORE_RUN=false pnpm build
+```
+
+Result: exit 0; TypeScript and the Vite production build passed, with 9 modules transformed.
+
+Command:
+
+```bash
+PNPM_CONFIG_VERIFY_DEPS_BEFORE_RUN=false pnpm tauri build --debug
+```
+
+Result: exit 0; the frontend build passed, Rust finished the `dev` profile, and Tauri produced `src-tauri/target/debug/bundle/macos/Today To Do List.app`.
+
+### Controller-provided native evidence
+
+The controller separately ran the real Tauri application, observed three existing tasks and their completion states, stopped the application process, relaunched it, and confirmed that all three tasks and their completion states survived the real process restart. This is controller-provided manual native smoke evidence, not an agent-run Playwright result.
+
+### Remaining concern
+
+The only unchanged concern is the managed sandbox's inability to launch system Chrome for Playwright. Renderer behavior is covered by the strengthened committed scenario and is ready for an unsandboxed run; real native restart persistence has now been manually verified by the controller as recorded above.

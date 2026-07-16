@@ -43,19 +43,35 @@ test('adds, completes, deletes, and restores a task after restart', async ({ pag
   await expect(task).toHaveClass(/task--open/);
   await expect(task).toHaveCSS('color', 'rgb(119, 119, 119)');
 
-  await task.click();
-  await expect(task).toHaveClass(/task--done/);
-  await expect(task).toHaveCSS('text-decoration-line', 'line-through');
+  await page.reload();
+
+  const restoredOpenTask = page.getByRole('button', { name: 'Buy milk' });
+  await expect(restoredOpenTask).toHaveClass(/task--open/);
+  await expect(restoredOpenTask).toHaveCSS('color', 'rgb(119, 119, 119)');
+
+  await restoredOpenTask.click();
+  await expect(restoredOpenTask).toHaveClass(/task--done/);
+  await expect(restoredOpenTask).toHaveCSS('text-decoration-line', 'line-through');
 
   await page.reload();
 
-  const restoredTask = page.getByRole('button', { name: 'Buy milk' });
-  await expect(restoredTask).toHaveClass(/task--done/);
-  await expect(restoredTask).toHaveCSS('text-decoration-line', 'line-through');
+  const restoredDoneTask = page.getByRole('button', { name: 'Buy milk' });
+  await expect(restoredDoneTask).toHaveClass(/task--done/);
+  await expect(restoredDoneTask).toHaveCSS('text-decoration-line', 'line-through');
 
-  await page.getByRole('listitem', { name: 'Buy milk' }).hover();
+  const taskRow = page.getByRole('listitem', { name: 'Buy milk' });
   const deleteButton = page.getByRole('button', { name: 'Delete Buy milk' });
-  await expect(deleteButton).toBeVisible();
+  await expect(deleteButton).toHaveCSS('opacity', '0');
+  await expect(deleteButton).toHaveCSS('pointer-events', 'none');
+
+  await taskRow.hover();
+
+  await expect(deleteButton).toHaveCSS('opacity', '1');
+  await expect(deleteButton).toHaveCSS('pointer-events', 'auto');
   await deleteButton.click();
-  await expect(restoredTask).toHaveCount(0);
+  await expect(restoredDoneTask).toHaveCount(0);
+
+  await page.reload();
+
+  await expect(page.getByRole('button', { name: 'Buy milk' })).toHaveCount(0);
 });
