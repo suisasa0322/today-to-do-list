@@ -100,3 +100,54 @@ Removed only `min-height: 460px` from `.sticky-note`, retaining `height: 100%` a
 - Type check: `./node_modules/.bin/tsc` — exit 0, no diagnostics.
 - Production bundle: `./node_modules/.bin/vite build` — exit 0; 9 modules transformed and bundle generated.
 - Parent will rebuild the native Tauri application and rerun real-app visual QA against the corrected content sizing.
+
+## Reviewer follow-up: serialized persistence and coverage
+
+The reviewer identified that each mutation started `save_tasks` concurrently. An older full-array snapshot could therefore finish after a newer snapshot, and an older rejection could overwrite the shared save status. The follow-up serializes immutable snapshots while retaining immediate render-before-save behavior.
+
+### Focused RED
+
+After adding deferred-promise queue coverage and the requested input/stylesheet contracts, the first focused command was:
+
+```text
+./node_modules/.bin/vitest run src/main.test.ts
+```
+
+The initial run exited 1 with two failures: the intended queue assertion saw two active `save_tasks` calls instead of one, and the stylesheet test exposed a jsdom-only `import.meta.url` path issue. After correcting only the stylesheet test path, the identical focused command exited 1 with 7 tests passing and the single intended production failure:
+
+```text
+AssertionError: expected save_tasks calls to have a length of 1 but got 2
+```
+
+This proved that the second persistence request began before the first deferred request settled.
+
+### Minimal implementation
+
+- Added one promise-backed snapshot queue in `src/main.ts`.
+- Each mutation still updates immutable in-memory state and renders immediately, then captures and queues the complete snapshot.
+- Both success and rejection handlers resolve the queue so the following snapshot always runs.
+- Each queued attempt captures a monotonically increasing version; only the current version may update `saveError`, preventing a stale completion from changing the latest status.
+- No visual CSS or markup changed.
+
+### Focused GREEN and coverage
+
+Command:
+
+```text
+./node_modules/.bin/vitest run src/main.test.ts
+```
+
+Final result: exit 0; 1 test file passed, 8 tests passed.
+
+Deterministic deferred promises prove that the second save does not start before the first settles, the queue continues after the first rejection, and the latest complete snapshot is saved last. They also prove that a stale rejection does not leave the status visible after a newer success, while the latest rejection shows exactly `Changes are not saved yet.` and retains the latest UI.
+
+Additional DOM coverage proves trimmed surrounding spaces on Enter, whitespace-only Enter is ignored, and non-Enter keys do not add. The stylesheet contract proves `.task__delete` defaults to `opacity: 0` with `pointer-events: none`, while hover and focus-within selectors restore `opacity: 1` and `pointer-events: auto`; the existing real DOM test continues to exercise the hover mirror class.
+
+### Final verification
+
+- Full frontend suite: `./node_modules/.bin/vitest run` — exit 0; 2 files passed, 11 tests passed.
+- Type check: `./node_modules/.bin/tsc` — exit 0, no diagnostics.
+- Production bundle: `./node_modules/.bin/vite build` — exit 0; 9 modules transformed and bundle generated.
+- Diff hygiene: `git diff --check` — exit 0.
+
+An intermediate type-check correctly rejected a static `node:fs` test import because the browser application intentionally omits Node type declarations. The stylesheet test now uses a test-local dynamic import with a targeted `@ts-expect-error`; the final type-check and all tests pass without adding a runtime or type dependency.

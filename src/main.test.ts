@@ -17,6 +17,22 @@ const milk: Task = {
   createdAt: '2026-07-12T00:00:00.000Z',
 };
 
+const deferred = () => {
+  let resolve!: () => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<void>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, reject, resolve };
+};
+
+const flushMicrotasks = async () => {
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+};
+
 const renderHarness = (initialTasks: Task[] = []) => {
   const root = document.querySelector<HTMLElement>('#app')!;
   let tasks = initialTasks;
@@ -48,10 +64,36 @@ describe('sticky-note task interface', () => {
   it('adds a task when Enter is pressed', () => {
     renderHarness();
     const input = screen.getByLabelText('New task');
-    fireEvent.change(input, { target: { value: 'Buy milk' } });
+    fireEvent.change(input, { target: { value: '  Buy milk  ' } });
     fireEvent.keyDown(input, { key: 'Enter' });
     expect(screen.getByRole('button', { name: 'Buy milk' }).classList.contains('task--open')).toBe(true);
-    expect(input).toHaveProperty('value', '');
+    expect(screen.getByLabelText('New task')).toHaveProperty('value', '');
+  });
+
+  it('does not add whitespace-only text when Enter is pressed', () => {
+    renderHarness();
+    const input = screen.getByLabelText('New task');
+    fireEvent.change(input, { target: { value: '   ' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(screen.queryAllByRole('listitem')).toHaveLength(0);
+  });
+
+  it('does not add a task for a non-Enter key', () => {
+    renderHarness();
+    const input = screen.getByLabelText('New task');
+    fireEvent.change(input, { target: { value: 'Buy milk' } });
+    fireEvent.keyDown(input, { key: 'Tab' });
+    expect(screen.queryAllByRole('listitem')).toHaveLength(0);
+  });
+
+  it('keeps delete hidden by default and reveals it on hover or focus-within', async () => {
+    // @ts-expect-error Node types are intentionally absent from this browser application.
+    const { readFileSync } = await import('node:fs');
+    const css = readFileSync('src/style.css', 'utf8');
+    expect(css).toMatch(/\.task__delete\s*\{[^}]*opacity:\s*0;[^}]*pointer-events:\s*none;/s);
+    expect(css).toMatch(
+      /\.task:hover \.task__delete,\s*\.task--hovered \.task__delete,\s*\.task:focus-within \.task__delete\s*\{[^}]*opacity:\s*1;[^}]*pointer-events:\s*auto;/s,
+    );
   });
 
   it('strikes a clicked task through', () => {
@@ -78,11 +120,15 @@ describe('sticky-note task interface', () => {
   });
 });
 
-it('loads once, saves the full updated array, and keeps failed changes visible', async () => {
-  invoke
-    .mockResolvedValue(undefined)
-    .mockResolvedValueOnce([milk])
-    .mockRejectedValueOnce(new Error('disk unavailable'));
+it('serializes full snapshots and only shows the latest save result', async () => {
+  const firstSave = deferred();
+  const secondSave = deferred();
+  const thirdSave = deferred();
+  const saves = [firstSave, secondSave, thirdSave];
+  let saveIndex = 0;
+  invoke.mockImplementation((command: string) =>
+    command === 'load_tasks' ? Promise.resolve([milk]) : saves[saveIndex++].promise,
+  );
   vi.spyOn(crypto, 'randomUUID').mockReturnValue('00000000-0000-4000-8000-000000000001');
 
   await import('./main');
@@ -91,8 +137,10 @@ it('loads once, saves the full updated array, and keeps failed changes visible',
   fireEvent.click(screen.getByRole('button', { name: 'Buy milk' }));
 
   expect(screen.getByRole('button', { name: 'Buy milk' }).classList.contains('task--done')).toBe(true);
-  await waitFor(() => expect(screen.getByText('Changes are not saved yet.')).toBeTruthy());
   expect(invoke).toHaveBeenNthCalledWith(1, 'load_tasks');
+  await waitFor(() =>
+    expect(invoke.mock.calls.filter(([command]) => command === 'save_tasks')).toHaveLength(1),
+  );
   expect(invoke).toHaveBeenNthCalledWith(2, 'save_tasks', {
     tasks: [{ ...milk, completed: true }],
   });
@@ -100,7 +148,13 @@ it('loads once, saves the full updated array, and keeps failed changes visible',
   const input = screen.getByLabelText('New task');
   fireEvent.change(input, { target: { value: 'Reply to email' } });
   fireEvent.keyDown(input, { key: 'Enter' });
-  expect(screen.queryByText('Changes are not saved yet.')).toBeNull();
+  expect(screen.getByRole('button', { name: 'Reply to email' })).toBeTruthy();
+  expect(invoke.mock.calls.filter(([command]) => command === 'save_tasks')).toHaveLength(1);
+
+  firstSave.reject(new Error('stale failure'));
+  await waitFor(() =>
+    expect(invoke.mock.calls.filter(([command]) => command === 'save_tasks')).toHaveLength(2),
+  );
   expect(invoke).toHaveBeenNthCalledWith(3, 'save_tasks', {
     tasks: [
       { ...milk, completed: true },
@@ -111,10 +165,19 @@ it('loads once, saves the full updated array, and keeps failed changes visible',
       }),
     ],
   });
+  expect(screen.queryByText('Changes are not saved yet.')).toBeNull();
+
+  secondSave.resolve();
+  await secondSave.promise;
+  await flushMicrotasks();
+  expect(screen.queryByText('Changes are not saved yet.')).toBeNull();
 
   const milkRow = screen.getByRole('listitem', { name: 'Buy milk' });
   fireEvent.click(within(milkRow).getByRole('button', { name: 'Delete Buy milk' }));
   expect(screen.queryByRole('button', { name: 'Buy milk' })).toBeNull();
+  await waitFor(() =>
+    expect(invoke.mock.calls.filter(([command]) => command === 'save_tasks')).toHaveLength(3),
+  );
   expect(invoke).toHaveBeenNthCalledWith(4, 'save_tasks', {
     tasks: [
       expect.objectContaining({
@@ -124,5 +187,10 @@ it('loads once, saves the full updated array, and keeps failed changes visible',
       }),
     ],
   });
+
+  thirdSave.reject(new Error('latest failure'));
+  await waitFor(() => expect(screen.getByText('Changes are not saved yet.')).toBeTruthy());
+  expect(screen.queryByRole('button', { name: 'Buy milk' })).toBeNull();
+  expect(screen.getByRole('button', { name: 'Reply to email' })).toBeTruthy();
   expect(invoke.mock.calls.filter(([command]) => command === 'load_tasks')).toHaveLength(1);
 });

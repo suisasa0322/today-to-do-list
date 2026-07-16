@@ -7,6 +7,8 @@ import type { Task } from './types';
 const root = document.querySelector<HTMLElement>('#app')!;
 let tasks: Task[] = [];
 let saveError = false;
+let saveQueue: Promise<void> = Promise.resolve();
+let saveVersion = 0;
 
 const render = () => renderApp(root, tasks, handlers);
 
@@ -14,10 +16,23 @@ const save = (nextTasks: Task[]) => {
   tasks = nextTasks;
   saveError = false;
   render();
-  void persistTasks(tasks).catch(() => {
-    saveError = true;
-    render();
-  });
+  const snapshot = tasks;
+  const version = ++saveVersion;
+  saveQueue = saveQueue
+    .then(() => persistTasks(snapshot))
+    .then(
+      () => {
+        if (version !== saveVersion) return;
+        const statusChanged = saveError;
+        saveError = false;
+        if (statusChanged) render();
+      },
+      () => {
+        if (version !== saveVersion) return;
+        saveError = true;
+        render();
+      },
+    );
 };
 
 const handlers: AppHandlers = {
