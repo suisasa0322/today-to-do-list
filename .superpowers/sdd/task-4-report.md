@@ -75,3 +75,28 @@ The first `pnpm build` wrapper attempt did not reach TypeScript or Vite: the man
 ## Concerns
 
 No implementation concerns. The only environment concern is the managed `pnpm build` wrapper's offline/non-TTY dependency check; direct local TypeScript and Vite verification passed.
+
+## Post-commit visual overflow fix
+
+Real-app visual QA after commit `ef1ddf1` reproduced a clipped bottom input border in the native 360×460 Tauri window. Computer Use accessibility also reported a page scrollbar at `0.375`. The native title bar is included in the configured 460px window height, so the WebView content area is shorter than 460px; `.sticky-note { height: 100%; min-height: 460px; }` forced the document beyond the available content height.
+
+### Focused RED
+
+Command:
+
+```text
+node -e "const fs=require('fs');const css=fs.readFileSync('src/style.css','utf8');if (/\.sticky-note\s*\{[^}]*min-height:\s*460px/s.test(css)) { console.error('FAIL: .sticky-note still forces a 460px content min-height'); process.exit(1) } console.log('PASS: .sticky-note does not force a 460px content min-height')"
+```
+
+Before the fix: exit 1 with `FAIL: .sticky-note still forces a 460px content min-height`.
+
+### Minimal fix and focused GREEN
+
+Removed only `min-height: 460px` from `.sticky-note`, retaining `height: 100%` and every other accepted visual token and behavior. The identical focused assertion then exited 0 with `PASS: .sticky-note does not force a 460px content min-height`.
+
+### Regression verification
+
+- Full frontend suite: `./node_modules/.bin/vitest run` — exit 0; 2 files passed, 8 tests passed.
+- Type check: `./node_modules/.bin/tsc` — exit 0, no diagnostics.
+- Production bundle: `./node_modules/.bin/vite build` — exit 0; 9 modules transformed and bundle generated.
+- Parent will rebuild the native Tauri application and rerun real-app visual QA against the corrected content sizing.
