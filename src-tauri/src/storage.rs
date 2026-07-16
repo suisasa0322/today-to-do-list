@@ -53,24 +53,30 @@ pub fn load_from_path(path: &Path) -> Result<Vec<Task>, StorageError> {
         Ok(tasks) => Ok(tasks),
         Err(_) => {
             let unix_seconds = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
-            let corrupt_path = corrupt_path_for_timestamp(path, unix_seconds);
-            fs::rename(path, corrupt_path)?;
+            backup_corrupt_file(path, unix_seconds)?;
             Ok(Vec::new())
         }
     }
 }
 
-pub(crate) fn corrupt_path_for_timestamp(path: &Path, unix_seconds: u64) -> PathBuf {
-    let base_path = path.with_file_name(format!("tasks-{unix_seconds}.corrupt.json"));
-    if !base_path.exists() {
-        return base_path;
-    }
-
-    for suffix in 1_u64.. {
-        let candidate =
-            path.with_file_name(format!("tasks-{unix_seconds}-{suffix}.corrupt.json"));
-        if !candidate.exists() {
-            return candidate;
+pub(crate) fn backup_corrupt_file(
+    path: &Path,
+    unix_seconds: u64,
+) -> Result<PathBuf, StorageError> {
+    for suffix in 0_u64.. {
+        let file_name = if suffix == 0 {
+            format!("tasks-{unix_seconds}.corrupt.json")
+        } else {
+            format!("tasks-{unix_seconds}-{suffix}.corrupt.json")
+        };
+        let candidate = path.with_file_name(file_name);
+        match fs::hard_link(path, &candidate) {
+            Ok(()) => {
+                fs::remove_file(path)?;
+                return Ok(candidate);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error.into()),
         }
     }
 

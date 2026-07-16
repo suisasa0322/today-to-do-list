@@ -5,6 +5,7 @@ export type AppHandlers = {
   onToggle: (id: string) => void;
   onDelete: (id: string) => void;
   saveError?: boolean;
+  loadError?: boolean;
 };
 
 const makeTaskRow = (task: Task, handlers: AppHandlers): HTMLLIElement => {
@@ -16,6 +17,7 @@ const makeTaskRow = (task: Task, handlers: AppHandlers): HTMLLIElement => {
 
   const toggle = document.createElement('button');
   toggle.type = 'button';
+  toggle.disabled = handlers.loadError ?? false;
   toggle.className = task.completed ? 'task__toggle task--done' : 'task__toggle task--open';
   toggle.setAttribute('aria-pressed', String(task.completed));
   toggle.setAttribute('aria-label', task.text);
@@ -32,6 +34,7 @@ const makeTaskRow = (task: Task, handlers: AppHandlers): HTMLLIElement => {
 
   const remove = document.createElement('button');
   remove.type = 'button';
+  remove.disabled = handlers.loadError ?? false;
   remove.className = 'task__delete';
   remove.setAttribute('aria-label', `Delete ${task.text}`);
   remove.textContent = '×';
@@ -62,7 +65,11 @@ export const renderApp = (root: HTMLElement, tasks: Task[], handlers: AppHandler
   const status = document.createElement('p');
   status.className = 'save-status';
   status.setAttribute('role', 'status');
-  status.textContent = handlers.saveError ? 'Changes are not saved yet.' : '';
+  status.textContent = handlers.loadError
+    ? 'Tasks could not be loaded. Editing is disabled.'
+    : handlers.saveError
+      ? 'Changes are not saved yet.'
+      : '';
 
   const label = document.createElement('label');
   label.className = 'new-task';
@@ -71,6 +78,7 @@ export const renderApp = (root: HTMLElement, tasks: Task[], handlers: AppHandler
   labelText.textContent = 'New task';
   const input = document.createElement('input');
   input.type = 'text';
+  input.disabled = handlers.loadError ?? false;
   input.placeholder = 'New task';
   input.addEventListener('keydown', event => {
     if (event.key !== 'Enter' || !input.value.trim()) return;

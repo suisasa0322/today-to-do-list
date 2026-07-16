@@ -7,8 +7,13 @@ import { addTask, deleteTask, toggleTask } from './task-store';
 import type { Task } from './types';
 
 const invoke = vi.hoisted(() => vi.fn());
+const destroy = vi.hoisted(() => vi.fn());
+const onCloseRequested = vi.hoisted(() => vi.fn());
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke }));
+vi.mock('@tauri-apps/api/window', () => ({
+  getCurrentWindow: () => ({ destroy, onCloseRequested }),
+}));
 
 const milk: Task = {
   id: 'task-1',
@@ -56,6 +61,10 @@ const renderHarness = (initialTasks: Task[] = []) => {
 beforeEach(() => {
   document.body.innerHTML = '<main id="app"></main>';
   invoke.mockReset();
+  destroy.mockReset();
+  onCloseRequested.mockReset();
+  onCloseRequested.mockResolvedValue(() => undefined);
+  vi.resetModules();
 });
 
 afterEach(() => vi.restoreAllMocks());
@@ -193,4 +202,60 @@ it('serializes full snapshots and only shows the latest save result', async () =
   expect(screen.queryByRole('button', { name: 'Buy milk' })).toBeNull();
   expect(screen.getByRole('button', { name: 'Reply to email' })).toBeTruthy();
   expect(invoke.mock.calls.filter(([command]) => command === 'load_tasks')).toHaveLength(1);
+});
+
+it('locks the empty interface after load fails and cannot overwrite disk state', async () => {
+  invoke.mockRejectedValueOnce(new Error('permission denied'));
+
+  await import('./main');
+
+  expect(await screen.findByText('Tasks could not be loaded. Editing is disabled.')).toBeTruthy();
+  const input = screen.getByLabelText('New task');
+  expect(input).toHaveProperty('disabled', true);
+  fireEvent.change(input, { target: { value: 'Must not be saved' } });
+  fireEvent.keyDown(input, { key: 'Enter' });
+  expect(invoke.mock.calls.filter(([command]) => command === 'save_tasks')).toHaveLength(0);
+});
+
+it('waits for the latest queued save after an earlier failure before destroying on close', async () => {
+  const firstSave = deferred();
+  const latestSave = deferred();
+  let saveIndex = 0;
+  invoke.mockImplementation((command: string) => {
+    if (command === 'load_tasks') return Promise.resolve([milk]);
+    return [firstSave, latestSave][saveIndex++].promise;
+  });
+  vi.spyOn(crypto, 'randomUUID').mockReturnValue('00000000-0000-4000-8000-000000000002');
+
+  await import('./main');
+  await screen.findByRole('button', { name: 'Buy milk' });
+  fireEvent.click(screen.getByRole('button', { name: 'Buy milk' }));
+  const input = screen.getByLabelText('New task');
+  fireEvent.change(input, { target: { value: 'Latest task' } });
+  fireEvent.keyDown(input, { key: 'Enter' });
+  await waitFor(() => expect(invoke.mock.calls.filter(([command]) => command === 'save_tasks')).toHaveLength(1));
+
+  const closeHandler = onCloseRequested.mock.calls[0]?.[0];
+  expect(closeHandler).toBeTypeOf('function');
+  const preventDefault = vi.fn();
+  const closing = closeHandler({ preventDefault });
+  expect(preventDefault).toHaveBeenCalledOnce();
+  expect(destroy).not.toHaveBeenCalled();
+
+  firstSave.reject(new Error('stale failure'));
+  await waitFor(() => expect(invoke.mock.calls.filter(([command]) => command === 'save_tasks')).toHaveLength(2));
+  expect(destroy).not.toHaveBeenCalled();
+  expect(invoke.mock.calls.filter(([command]) => command === 'save_tasks')[1]).toEqual([
+    'save_tasks',
+    {
+      tasks: [
+        { ...milk, completed: true },
+        expect.objectContaining({ text: 'Latest task' }),
+      ],
+    },
+  ]);
+
+  latestSave.resolve();
+  await closing;
+  expect(destroy).toHaveBeenCalledOnce();
 });

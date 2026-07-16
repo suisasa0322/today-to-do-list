@@ -2,6 +2,10 @@
   "name": "today-to-do-list",
   "private": true,
   "version": "0.1.0",
+  "packageManager": "pnpm@11.9.0",
+  "engines": {
+    "node": "^20.19.0 || >=22.13.0"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",

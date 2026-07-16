@@ -1,5 +1,5 @@
 use crate::models::Task;
-use crate::storage::{corrupt_path_for_timestamp, load_from_path, save_to_path};
+use crate::storage::{backup_corrupt_file, load_from_path, save_to_path};
 use tempfile::tempdir;
 
 #[test]
@@ -58,21 +58,26 @@ fn corrupt_data_is_renamed_and_load_returns_empty() {
 }
 
 #[test]
-fn corrupt_backup_path_uses_a_suffix_without_overwriting_an_existing_backup() {
+fn corrupt_backup_atomically_skips_existing_names_and_preserves_all_bytes() {
     let directory = tempdir().unwrap();
     let tasks_path = directory.path().join("tasks.json");
     let existing_backup = directory.path().join("tasks-123.corrupt.json");
+    let existing_suffix = directory.path().join("tasks-123-1.corrupt.json");
+    std::fs::write(&tasks_path, b"latest corrupt payload").unwrap();
     std::fs::write(&existing_backup, b"first corrupt payload").unwrap();
+    std::fs::write(&existing_suffix, b"second corrupt payload").unwrap();
 
-    let next_backup = corrupt_path_for_timestamp(&tasks_path, 123);
+    let backup = backup_corrupt_file(&tasks_path, 123).unwrap();
 
-    assert_eq!(
-        next_backup.file_name().unwrap(),
-        "tasks-123-1.corrupt.json"
-    );
-    std::fs::write(&next_backup, b"second corrupt payload").unwrap();
+    assert_eq!(backup.file_name().unwrap(), "tasks-123-2.corrupt.json");
+    assert!(!tasks_path.exists());
     assert_eq!(
         std::fs::read(existing_backup).unwrap(),
         b"first corrupt payload"
     );
+    assert_eq!(
+        std::fs::read(existing_suffix).unwrap(),
+        b"second corrupt payload"
+    );
+    assert_eq!(std::fs::read(backup).unwrap(), b"latest corrupt payload");
 }
