@@ -9,8 +9,13 @@ const root = document.querySelector<HTMLElement>('#app')!;
 let tasks: Task[] = [];
 let saveError = false;
 let loadError = false;
+let lifecycleError = false;
+let closing = false;
 let saveQueue: Promise<void> = Promise.resolve();
 let saveVersion = 0;
+let closePromise: Promise<void> | undefined;
+
+const editingLocked = () => loadError || lifecycleError || closing;
 
 const render = () => renderApp(root, tasks, handlers);
 
@@ -39,15 +44,15 @@ const save = (nextTasks: Task[]) => {
 
 const handlers: AppHandlers = {
   onAdd(text) {
-    if (loadError) return;
+    if (editingLocked()) return;
     save(addTask(tasks, text, new Date().toISOString(), crypto.randomUUID()));
   },
   onToggle(id) {
-    if (loadError) return;
+    if (editingLocked()) return;
     save(toggleTask(tasks, id));
   },
   onDelete(id) {
-    if (loadError) return;
+    if (editingLocked()) return;
     save(deleteTask(tasks, id));
   },
   get saveError() {
@@ -56,21 +61,44 @@ const handlers: AppHandlers = {
   get loadError() {
     return loadError;
   },
+  get lifecycleError() {
+    return lifecycleError;
+  },
+  get editingLocked() {
+    return editingLocked();
+  },
 };
 
 const appWindow = getCurrentWindow();
-void appWindow.onCloseRequested(async event => {
+const handleCloseRequested = async (event: { preventDefault: () => void }) => {
   event.preventDefault();
-  await saveQueue;
-  await appWindow.destroy();
-});
-
-void loadTasks()
-  .then(loadedTasks => {
-    tasks = loadedTasks;
+  if (!closePromise) {
+    closing = true;
     render();
-  })
-  .catch(() => {
+    closePromise = (async () => {
+      await saveQueue;
+      await appWindow.destroy();
+    })();
+  }
+  await closePromise;
+};
+
+const start = async () => {
+  try {
+    await appWindow.onCloseRequested(handleCloseRequested);
+  } catch {
+    lifecycleError = true;
+    render();
+    return;
+  }
+
+  try {
+    tasks = await loadTasks();
+    render();
+  } catch {
     loadError = true;
     render();
-  });
+  }
+};
+
+void start();

@@ -93,3 +93,52 @@ The first attempted pnpm RED command was intercepted before Vitest by the manage
 ## Concerns
 
 No implementation concerns. The managed pnpm wrapper still attempts registry verification in this network-restricted environment; local installed binaries provided complete frontend test, type, and build evidence.
+
+## Lifecycle follow-up after final re-review
+
+### Root causes
+
+- The close callback captured `saveQueue` without first locking mutation entry points, so a later renderer event could append a save behind the captured tail and be lost when destruction followed the earlier tail.
+- Each close request independently awaited and destroyed, so overlapping requests could call force-destroy more than once.
+- Listener registration was fire-and-forget while task loading started independently; registration rejection could become unhandled while the app exposed editable loaded state without close protection.
+- The approved Playwright renderer fixture mocked persistence commands only and lacked the Tauri window metadata, callback registry, and event-listen command needed by real lifecycle startup.
+
+### Close stabilization and single-shot destroy RED/GREEN
+
+RED:
+
+`./node_modules/.bin/vitest run src/main.test.ts -t "locks mutations and single-shots"`
+
+Exit 1: 1 failed, 10 skipped. The input remained enabled after the close callback started (`disabled` was `false` instead of `true`).
+
+GREEN:
+
+The same command exited 0: 1 passed, 10 skipped. The test starts two ordered pre-close snapshots, invokes close, confirms the newly rendered input is disabled, attempts add and toggle events after closing starts, invokes a repeated close request, then proves exactly two saves and exactly one destroy. Destroy remains pending until the latest pre-close snapshot settles.
+
+### Registration failure gate RED/GREEN
+
+RED:
+
+`./node_modules/.bin/vitest run src/main.test.ts -t "close-listener registration fails"`
+
+Exit 1: 1 failed, 10 skipped. The lifecycle error was absent and a loaded editable `Buy milk` task was rendered even though listener registration rejected.
+
+GREEN:
+
+The same command exited 0: 1 passed, 10 skipped. Rejected registration now renders `Safe shutdown could not be initialized. Editing is disabled.`, disables input, and produces zero `load_tasks` and zero `save_tasks` calls. Normal loading begins only after successful awaited registration.
+
+### Covering verification
+
+- `./node_modules/.bin/vitest run src/main.test.ts`: exit 0, 11/11 passed.
+- `./node_modules/.bin/playwright test --list`: exit 0; discovered 1 test in 1 file. No browser was launched and browser GREEN is not claimed.
+- `./node_modules/.bin/vitest run`: exit 0, 2 files and 14/14 tests passed.
+- `cargo test`: exit 0, 4/4 unit tests passed; main and doc-test targets passed with no tests.
+- `./node_modules/.bin/tsc && ./node_modules/.bin/vite build`: exit 0; TypeScript passed and Vite built 13 modules.
+
+### Fixture and self-review
+
+- The Playwright init script now provides current-window metadata, callback transformation and unregistration, event listener registration/unregistration, and force-destroy. It accepts only the close-request event boundary plus the existing load/save commands; unexpected requests still throw.
+- `closing` is set and rendered synchronously before the stable queue tail is awaited. All three mutation handlers consult the combined load/lifecycle/closing lock.
+- Repeated callbacks call `preventDefault` but share the first `closePromise`, preventing recursive native close and double-destroy.
+- Save serialization, latest-version status handling, load-error locking, corrupt recovery, hard-link backups, and native persistence commands are unchanged.
+- The Tauri bundle and Playwright browser execution were not rerun because frontend lifecycle unit tests and the frontend type/build are the covering evidence requested for this follow-up.

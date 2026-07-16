@@ -7,14 +7,55 @@ const distDirectory = resolve(process.cwd(), 'dist');
 test('adds, completes, deletes, and restores a task after restart', async ({ page }) => {
   await page.addInitScript(() => {
     const storageKey = 'today-to-do-list:e2e:tasks';
+    type TauriCallback = (payload: unknown) => unknown;
+    type InvokeArgs = {
+      event?: string;
+      eventId?: number;
+      handler?: number;
+      tasks?: unknown[];
+    };
+    const callbacks = new Map<number, TauriCallback>();
+    let nextCallbackId = 1;
     const tauriWindow = window as Window & {
       __TAURI_INTERNALS__: {
-        invoke: (command: string, args?: { tasks?: unknown[] }) => Promise<unknown>;
+        invoke: (command: string, args?: InvokeArgs) => Promise<unknown>;
+        metadata: { currentWindow: { label: string } };
+        transformCallback: (callback: TauriCallback, once?: boolean) => number;
+        unregisterCallback: (id: number) => void;
+      };
+      __TAURI_EVENT_PLUGIN_INTERNALS__: {
+        unregisterListener: (event: string, id: number) => void;
       };
     };
 
     tauriWindow.__TAURI_INTERNALS__ = {
+      metadata: { currentWindow: { label: 'main' } },
+      transformCallback(callback, once = false) {
+        const id = nextCallbackId++;
+        callbacks.set(id, payload => {
+          if (once) callbacks.delete(id);
+          return callback(payload);
+        });
+        return id;
+      },
+      unregisterCallback(id) {
+        callbacks.delete(id);
+      },
       async invoke(command, args = {}) {
+        if (command === 'plugin:event|listen') {
+          if (args.event !== 'tauri://close-requested' || typeof args.handler !== 'number') {
+            throw new Error(`Unexpected Tauri listen request: ${JSON.stringify(args)}`);
+          }
+          return args.handler;
+        }
+        if (command === 'plugin:event|unlisten') {
+          if (typeof args.eventId !== 'number') {
+            throw new Error(`Unexpected Tauri unlisten request: ${JSON.stringify(args)}`);
+          }
+          callbacks.delete(args.eventId);
+          return null;
+        }
+        if (command === 'plugin:window|destroy') return null;
         if (command === 'load_tasks') {
           return JSON.parse(localStorage.getItem(storageKey) ?? '[]');
         }
@@ -23,6 +64,11 @@ test('adds, completes, deletes, and restores a task after restart', async ({ pag
           return null;
         }
         throw new Error(`Unexpected Tauri command: ${command}`);
+      },
+    };
+    tauriWindow.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
+      unregisterListener(_event, id) {
+        callbacks.delete(id);
       },
     };
   });

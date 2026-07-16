@@ -217,7 +217,7 @@ it('locks the empty interface after load fails and cannot overwrite disk state',
   expect(invoke.mock.calls.filter(([command]) => command === 'save_tasks')).toHaveLength(0);
 });
 
-it('waits for the latest queued save after an earlier failure before destroying on close', async () => {
+it('locks mutations and single-shots repeated close requests while flushing the pre-close tail', async () => {
   const firstSave = deferred();
   const latestSave = deferred();
   let saveIndex = 0;
@@ -241,6 +241,16 @@ it('waits for the latest queued save after an earlier failure before destroying 
   const closing = closeHandler({ preventDefault });
   expect(preventDefault).toHaveBeenCalledOnce();
   expect(destroy).not.toHaveBeenCalled();
+  const lockedInput = screen.getByLabelText('New task');
+  expect(lockedInput).toHaveProperty('disabled', true);
+  fireEvent.change(lockedInput, { target: { value: 'Too late' } });
+  fireEvent.keyDown(lockedInput, { key: 'Enter' });
+  fireEvent.click(screen.getByRole('button', { name: 'Buy milk' }));
+  expect(screen.queryByRole('button', { name: 'Too late' })).toBeNull();
+
+  const repeatedPreventDefault = vi.fn();
+  const repeatedClosing = closeHandler({ preventDefault: repeatedPreventDefault });
+  expect(repeatedPreventDefault).toHaveBeenCalledOnce();
 
   firstSave.reject(new Error('stale failure'));
   await waitFor(() => expect(invoke.mock.calls.filter(([command]) => command === 'save_tasks')).toHaveLength(2));
@@ -256,6 +266,19 @@ it('waits for the latest queued save after an earlier failure before destroying 
   ]);
 
   latestSave.resolve();
-  await closing;
+  await Promise.all([closing, repeatedClosing]);
   expect(destroy).toHaveBeenCalledOnce();
+  expect(invoke.mock.calls.filter(([command]) => command === 'save_tasks')).toHaveLength(2);
+});
+
+it('locks startup and never loads tasks when close-listener registration fails', async () => {
+  onCloseRequested.mockRejectedValueOnce(new Error('event plugin unavailable'));
+  invoke.mockResolvedValue([milk]);
+
+  await import('./main');
+
+  expect(await screen.findByText('Safe shutdown could not be initialized. Editing is disabled.')).toBeTruthy();
+  expect(screen.getByLabelText('New task')).toHaveProperty('disabled', true);
+  expect(invoke.mock.calls.filter(([command]) => command === 'load_tasks')).toHaveLength(0);
+  expect(invoke.mock.calls.filter(([command]) => command === 'save_tasks')).toHaveLength(0);
 });
