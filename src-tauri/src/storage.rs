@@ -2,7 +2,7 @@ use crate::models::Task;
 use std::fmt;
 use std::fs::{self, File};
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug)]
@@ -53,11 +53,28 @@ pub fn load_from_path(path: &Path) -> Result<Vec<Task>, StorageError> {
         Ok(tasks) => Ok(tasks),
         Err(_) => {
             let unix_seconds = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
-            let corrupt_path = path.with_file_name(format!("tasks-{unix_seconds}.corrupt.json"));
+            let corrupt_path = corrupt_path_for_timestamp(path, unix_seconds);
             fs::rename(path, corrupt_path)?;
             Ok(Vec::new())
         }
     }
+}
+
+pub(crate) fn corrupt_path_for_timestamp(path: &Path, unix_seconds: u64) -> PathBuf {
+    let base_path = path.with_file_name(format!("tasks-{unix_seconds}.corrupt.json"));
+    if !base_path.exists() {
+        return base_path;
+    }
+
+    for suffix in 1_u64.. {
+        let candidate =
+            path.with_file_name(format!("tasks-{unix_seconds}-{suffix}.corrupt.json"));
+        if !candidate.exists() {
+            return candidate;
+        }
+    }
+
+    unreachable!("the corrupt backup suffix range is inexhaustible")
 }
 
 pub fn save_to_path(path: &Path, tasks: &[Task]) -> Result<(), StorageError> {

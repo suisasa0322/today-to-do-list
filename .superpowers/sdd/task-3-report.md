@@ -163,3 +163,88 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 ## Final commit
 
 Committed with subject `feat: persist tasks locally` after the focused and full offline suites passed.
+
+## Review follow-up: collision-safe corrupt backups and stronger coverage
+
+### Focused RED
+
+Tests were first expanded to require:
+
+- the base `tasks-<unix-seconds>.corrupt.json` filename pattern;
+- byte-for-byte preservation of the malformed payload;
+- camelCase `createdAt` serialization without `created_at`;
+- deterministic selection of `tasks-<unix-seconds>-1.corrupt.json` when the base backup already exists, without changing the existing backup.
+
+Command:
+
+```text
+cargo test --manifest-path src-tauri/Cargo.toml --offline storage_tests
+```
+
+Result: exit code 101 for the expected missing collision-safe selector.
+
+```text
+error[E0432]: unresolved import `crate::storage::corrupt_path_for_timestamp`
+ --> src/storage_tests.rs:2:22
+  |
+2 | use crate::storage::{corrupt_path_for_timestamp, load_from_path, save_to_path};
+  |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^ no `corrupt_path_for_timestamp` in `storage`
+
+error: could not compile `today-to-do-list` (lib test) due to 1 previous error
+```
+
+### Minimal fix
+
+Added `corrupt_path_for_timestamp`, which retains the required unsuffixed base name for the first backup and selects the first available numeric suffix (`-1`, `-2`, and so on) for collisions. Malformed-load handling now uses that selector before renaming the original file.
+
+### Focused GREEN
+
+Command:
+
+```text
+cargo test --manifest-path src-tauri/Cargo.toml --offline storage_tests
+```
+
+Result: exit code 0.
+
+```text
+running 4 tests
+test storage_tests::corrupt_data_is_renamed_and_load_returns_empty ... ok
+test storage_tests::saved_task_json_uses_created_at_camel_case ... ok
+test storage_tests::corrupt_backup_path_uses_a_suffix_without_overwriting_an_existing_backup ... ok
+test storage_tests::load_after_save_returns_the_same_tasks ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+```
+
+### Full offline Rust suite and diff validation
+
+Commands:
+
+```text
+cargo test --manifest-path src-tauri/Cargo.toml --offline
+git diff --check
+```
+
+Result: both exited 0.
+
+```text
+running 4 tests
+test storage_tests::corrupt_data_is_renamed_and_load_returns_empty ... ok
+test storage_tests::corrupt_backup_path_uses_a_suffix_without_overwriting_an_existing_backup ... ok
+test storage_tests::saved_task_json_uses_created_at_camel_case ... ok
+test storage_tests::load_after_save_returns_the_same_tasks ... ok
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+```
+
+### Review follow-up files changed
+
+- `src-tauri/src/storage.rs`
+- `src-tauri/src/storage_tests.rs`
+- `.superpowers/sdd/task-3-report.md`
