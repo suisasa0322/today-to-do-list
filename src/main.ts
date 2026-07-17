@@ -77,6 +77,12 @@ const handleCloseRequested = async (event: { preventDefault: () => void }) => {
     render();
     closePromise = (async () => {
       await saveQueue;
+      if (saveError) {
+        closing = false;
+        closePromise = undefined;
+        render();
+        return;
+      }
       await appWindow.destroy();
     })();
   }

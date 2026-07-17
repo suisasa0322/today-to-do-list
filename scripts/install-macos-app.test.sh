@@ -184,7 +184,7 @@ test_backup_collision_is_safe() {
 
   run_installer 123
 
-  assert_status 0 "backup collision should be retried"
+  assert_status 0 "existing backup should remain intact while preserving the previous app separately"
   assert_content "$DESTINATION/Contents/version.txt" new "destination was not replaced"
   assert_content "$collision/Contents/version.txt" collision "existing backup was overwritten"
   [[ ! -e "$collision/Today To Do List.app" ]] || fail "previous app was nested in existing backup"

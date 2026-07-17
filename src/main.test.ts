@@ -271,6 +271,52 @@ it('locks mutations and single-shots repeated close requests while flushing the 
   expect(invoke.mock.calls.filter(([command]) => command === 'save_tasks')).toHaveLength(2);
 });
 
+it('keeps the app open and unlocks editing when the latest save fails during close', async () => {
+  const latestSave = deferred();
+  const retrySave = deferred();
+  let saveIndex = 0;
+  invoke.mockImplementation((command: string) => {
+    if (command === 'load_tasks') return Promise.resolve([milk]);
+    return [latestSave, retrySave][saveIndex++].promise;
+  });
+  vi.spyOn(crypto, 'randomUUID')
+    .mockReturnValueOnce('00000000-0000-4000-8000-000000000003')
+    .mockReturnValueOnce('00000000-0000-4000-8000-000000000004');
+
+  await import('./main');
+  await screen.findByRole('button', { name: 'Buy milk' });
+  fireEvent.click(screen.getByRole('button', { name: 'Buy milk' }));
+  await waitFor(() => expect(invoke.mock.calls.filter(([command]) => command === 'save_tasks')).toHaveLength(1));
+
+  const closeHandler = onCloseRequested.mock.calls[0]?.[0];
+  expect(closeHandler).toBeTypeOf('function');
+  const preventDefault = vi.fn();
+  const repeatedPreventDefault = vi.fn();
+  const closing = closeHandler({ preventDefault });
+  const repeatedClosing = closeHandler({ preventDefault: repeatedPreventDefault });
+
+  expect(preventDefault).toHaveBeenCalledOnce();
+  expect(repeatedPreventDefault).toHaveBeenCalledOnce();
+  expect(screen.getByLabelText('New task')).toHaveProperty('disabled', true);
+  expect(destroy).not.toHaveBeenCalled();
+
+  latestSave.reject(new Error('disk full'));
+  await Promise.all([closing, repeatedClosing]);
+
+  expect(destroy).not.toHaveBeenCalled();
+  expect(screen.getByRole('button', { name: 'Buy milk' }).classList.contains('task--done')).toBe(true);
+  expect(screen.getByText('Changes are not saved yet.')).toBeTruthy();
+  expect(screen.getByLabelText('New task')).toHaveProperty('disabled', false);
+  expect(invoke.mock.calls.filter(([command]) => command === 'save_tasks')).toHaveLength(1);
+
+  const input = screen.getByLabelText('New task');
+  fireEvent.change(input, { target: { value: 'Try saving again' } });
+  fireEvent.keyDown(input, { key: 'Enter' });
+  expect(screen.getByRole('button', { name: 'Try saving again' })).toBeTruthy();
+  await waitFor(() => expect(invoke.mock.calls.filter(([command]) => command === 'save_tasks')).toHaveLength(2));
+  retrySave.resolve();
+});
+
 it('locks startup and never loads tasks when close-listener registration fails', async () => {
   onCloseRequested.mockRejectedValueOnce(new Error('event plugin unavailable'));
   invoke.mockResolvedValue([milk]);
