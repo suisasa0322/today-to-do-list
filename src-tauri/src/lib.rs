@@ -5,6 +5,9 @@ mod storage;
 #[cfg(test)]
 mod storage_tests;
 
+#[cfg(test)]
+mod capability_tests;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()

@@ -142,3 +142,44 @@ The same command exited 0: 1 passed, 10 skipped. Rejected registration now rende
 - Repeated callbacks call `preventDefault` but share the first `closePromise`, preventing recursive native close and double-destroy.
 - Save serialization, latest-version status handling, load-error locking, corrupt recovery, hard-link backups, and native persistence commands are unchanged.
 - The Tauri bundle and Playwright browser execution were not rerun because frontend lifecycle unit tests and the frontend type/build are the covering evidence requested for this follow-up.
+
+## Native capability follow-up
+
+### Root cause
+
+The real native window reported `event.listen not allowed. Permissions associated with this command: core:event:allow-listen, core:event:default`. Lifecycle registration correctly failed closed, but the Tauri application had no capability document authorizing the narrow event-listen, event-unlisten, and force-destroy commands used by production shutdown handling.
+
+### Capability regression RED/GREEN
+
+The first attempted focused command included Cargo `--exact` without the module-qualified test name. It exited 0 while running 0 tests and is not counted as RED evidence.
+
+RED:
+
+`cargo test default_capability_has_only_the_required_main_window_permissions`
+
+Exit 101: 1 test ran and failed at `default capability must exist` with `No such file or directory` for `capabilities/default.json`.
+
+GREEN:
+
+The same command exited 0: 1 passed. The regression parses the real JSON, asserts `windows` is exactly `["main"]`, asserts no `webviews` scope, and compares the complete sorted permission array to exactly:
+
+- `core:event:allow-listen`
+- `core:event:allow-unlisten`
+- `core:window:allow-destroy`
+
+The added `src-tauri/capabilities/default.json` contains only those permissions; it does not grant `core:default` or any other broad permission.
+
+### Full verification
+
+- `cargo test`: exit 0, 5/5 Rust unit tests passed; main and doc-test targets passed with no tests.
+- `./node_modules/.bin/vitest run`: exit 0, 2 files and 14/14 frontend tests passed.
+- `./node_modules/.bin/tsc && ./node_modules/.bin/vite build`: exit 0; TypeScript passed and Vite built 13 modules.
+- `PNPM_CONFIG_VERIFY_DEPS_BEFORE_RUN=false ./node_modules/.bin/tauri build --debug`: exit 0. The required `pnpm build` hook passed, Rust completed the debug build, and Tauri bundled `src-tauri/target/debug/bundle/macos/Today To Do List.app`.
+- Playwright browser execution was not run.
+
+### Self-review
+
+- Capability scope is limited to the single production window label `main`.
+- Permission scope matches only the lifecycle calls made by the renderer: listen, unlisten returned by registration, and force-destroy after queue flush.
+- Existing frontend lifecycle, persistence, corrupt-backup, and native command code is unchanged.
+- The controller will independently launch the rebuilt app to verify lifecycle registration and task loading in the real native window.
