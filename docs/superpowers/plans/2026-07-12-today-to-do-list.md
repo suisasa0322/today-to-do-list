@@ -279,7 +279,7 @@ In `src/persistence.ts`, call `invoke<Task[]>('load_tasks')` and `invoke<void>('
 
 - [ ] **Step 4: Implement task-row markup and CSS behavior**
 
-Render each row as a button containing task text and a nested delete button that stops propagation. Apply `.task--open { color: #777; }`, `.task--done { color: #777; text-decoration: line-through; }`, and hide `.task__delete` until `.task:hover .task__delete` or `.task:focus-within .task__delete`. Use a pale-yellow card background such as `#fff4b8`.
+Render each row as a container with sibling task-toggle and delete buttons. Apply `.task--open { color: #777; }`, `.task--done { color: #777; text-decoration: line-through; }`, and hide `.task__delete` until `.task:hover .task__delete` or `.task:focus-within .task__delete`. Use a pale-yellow card background such as `#fff4b8`.
 
 - [ ] **Step 5: Run the frontend test suite**
 
