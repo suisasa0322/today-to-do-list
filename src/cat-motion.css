@@ -1,8 +1,8 @@
 .cat-companion {
   position: absolute;
   z-index: 2;
-  top: -22px;
-  right: -16px;
+  right: 0;
+  bottom: 0;
   width: clamp(118px, 38vw, 142px);
   aspect-ratio: 4 / 3;
   pointer-events: none;
@@ -36,6 +36,9 @@
   display: inline-block;
   min-width: 0;
   max-width: 100%;
+  padding-block: 12px;
+  margin-block: -12px;
+  overflow: clip;
 }
 
 .task__strike {
@@ -128,7 +131,7 @@
 }
 
 @media (max-width: 300px) {
-  .cat-companion { width: 108px; right: -22px; }
+  .cat-companion { width: 108px; right: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {

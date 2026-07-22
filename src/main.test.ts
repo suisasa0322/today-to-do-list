@@ -124,6 +124,15 @@ describe('sticky-note task interface', () => {
     expect(css).toMatch(/@media\s*\(prefers-reduced-motion:\s*reduce\)/);
     expect(css).toContain('.cat-companion__frame--blink');
     expect(css).toContain('.cat-companion__frame--ear');
+    expect(css).toMatch(
+      /\.cat-companion\s*\{(?=[^}]*bottom:\s*0;)(?=[^}]*right:\s*0;)(?![^}]*top:)(?![^}]*right:\s*-)[^}]*\}/s,
+    );
+    expect(css).toMatch(
+      /@media\s*\(max-width:\s*300px\)\s*\{\s*\.cat-companion\s*\{(?=[^}]*right:\s*0;)(?![^}]*right:\s*-)[^}]*\}/s,
+    );
+    expect(css).toMatch(
+      /\.task__text-effect\s*\{(?=[^}]*overflow:\s*clip;)(?=[^}]*padding-block:\s*12px;)(?=[^}]*margin-block:\s*-12px;)[^}]*\}/s,
+    );
   });
 
   it('adds a task when Enter is pressed', () => {
