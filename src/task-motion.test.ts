@@ -23,6 +23,21 @@ it('plays and cleans up a completion motion', () => {
   expect(row.dataset.motionDirection).toBeUndefined();
 });
 
+it('ignores descendant animationend until the task row animation ends', () => {
+  const root = makeRoot();
+  const controller = createTaskMotionController(root, () => false);
+  const row = root.querySelector<HTMLElement>('[data-task-id="task-1"]')!;
+  row.innerHTML = '<span class="task__label"></span>';
+  const label = row.querySelector<HTMLElement>('.task__label')!;
+
+  controller.play({ taskId: 'task-1', direction: 'complete', token: 1 });
+  label.dispatchEvent(new Event('animationend', { bubbles: true }));
+  expect(row.classList.contains('task--motion-active')).toBe(true);
+
+  row.dispatchEvent(new Event('animationend'));
+  expect(row.classList.contains('task--motion-active')).toBe(false);
+});
+
 it('cancels stale motion before playing the latest direction', () => {
   const root = makeRoot();
   const controller = createTaskMotionController(root, () => false);
@@ -32,6 +47,19 @@ it('cancels stale motion before playing the latest direction', () => {
   expect(row.classList.contains('task--motion-completing')).toBe(false);
   expect(row.classList.contains('task--motion-reopening')).toBe(true);
   expect(row.dataset.motionToken).toBe('2');
+});
+
+it('cleans up the active motion when cancelled publicly', () => {
+  const root = makeRoot();
+  const controller = createTaskMotionController(root, () => false);
+  controller.play({ taskId: 'task-1', direction: 'reopen', token: 2 });
+  const row = root.querySelector<HTMLElement>('[data-task-id="task-1"]')!;
+
+  controller.cancel();
+
+  expect(row.classList.contains('task--motion-active')).toBe(false);
+  expect(row.dataset.motionDirection).toBeUndefined();
+  expect(row.dataset.motionToken).toBeUndefined();
 });
 
 it('marks reduced motion and uses timeout cleanup when animationend is absent', () => {

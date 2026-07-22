@@ -49,7 +49,7 @@ export const createTaskMotionController = (
       if (settled) return;
       settled = true;
       window.clearTimeout(timeout);
-      row.removeEventListener('animationend', cleanup);
+      row.removeEventListener('animationend', onAnimationEnd);
       row.classList.remove(
         'task--motion-active',
         'task--motion-completing',
@@ -61,7 +61,11 @@ export const createTaskMotionController = (
       if (cancelActive === cleanup) cancelActive = undefined;
     };
 
-    row.addEventListener('animationend', cleanup);
+    const onAnimationEnd = (event: Event) => {
+      if (event.target === row) cleanup();
+    };
+
+    row.addEventListener('animationend', onAnimationEnd);
     timeout = window.setTimeout(cleanup, timeoutFor(motion, reduced));
     cancelActive = cleanup;
   };
