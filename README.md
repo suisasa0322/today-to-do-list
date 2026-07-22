@@ -19,5 +19,12 @@ pnpm tauri dev
 
 Playwright uses the system Google Chrome installation (`channel: chrome`).
 
-pnpm vitest run
+```bash
+pnpm test
+pnpm build
 pnpm playwright test
+cargo test --manifest-path src-tauri/Cargo.toml
+zsh scripts/verify-icon-assets.sh
+zsh scripts/verify-ui-cat-assets.sh
+zsh scripts/install-macos-app.test.sh
+```
