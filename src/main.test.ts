@@ -113,6 +113,19 @@ describe('sticky-note task interface', () => {
     expect(row.querySelector<HTMLImageElement>('.task__swipe-paw')?.alt).toBe('');
   });
 
+  it('defines bidirectional paw motion and a reduced-motion fallback', async () => {
+    // @ts-expect-error Node types are intentionally absent from this browser application.
+    const { readFileSync } = await import('node:fs');
+    const css = readFileSync('src/cat-motion.css', 'utf8');
+    expect(css).toContain('@keyframes paw-swipe-complete');
+    expect(css).toContain('@keyframes paw-swipe-reopen');
+    expect(css).toContain('.task--motion-completing');
+    expect(css).toContain('.task--motion-reopening');
+    expect(css).toMatch(/@media\s*\(prefers-reduced-motion:\s*reduce\)/);
+    expect(css).toContain('.cat-companion__frame--blink');
+    expect(css).toContain('.cat-companion__frame--ear');
+  });
+
   it('adds a task when Enter is pressed', () => {
     renderHarness();
     const input = screen.getByLabelText('New task');

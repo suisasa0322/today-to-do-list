@@ -1,4 +1,5 @@
 import "./style.css";
+import './cat-motion.css';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { loadTasks, persistTasks } from './persistence';
 import { renderApp, type AppHandlers } from './render';
