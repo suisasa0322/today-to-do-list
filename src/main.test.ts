@@ -9,10 +9,15 @@ import type { Task } from './types';
 const invoke = vi.hoisted(() => vi.fn());
 const destroy = vi.hoisted(() => vi.fn());
 const onCloseRequested = vi.hoisted(() => vi.fn());
+const playMotion = vi.hoisted(() => vi.fn());
+const cancelMotion = vi.hoisted(() => vi.fn());
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke }));
 vi.mock('@tauri-apps/api/window', () => ({
   getCurrentWindow: () => ({ destroy, onCloseRequested }),
+}));
+vi.mock('./task-motion', () => ({
+  createTaskMotionController: () => ({ cancel: cancelMotion, play: playMotion }),
 }));
 
 const milk: Task = {
@@ -63,11 +68,37 @@ beforeEach(() => {
   invoke.mockReset();
   destroy.mockReset();
   onCloseRequested.mockReset();
+  playMotion.mockReset();
+  cancelMotion.mockReset();
   onCloseRequested.mockResolvedValue(() => undefined);
   vi.resetModules();
 });
 
 afterEach(() => vi.restoreAllMocks());
+
+it('plays the latest completion direction without replaying on load', async () => {
+  invoke.mockImplementation((command: string) =>
+    command === 'load_tasks' ? Promise.resolve([milk]) : Promise.resolve(null),
+  );
+
+  await import('./main');
+  await screen.findByRole('button', { name: 'Buy milk' });
+  expect(playMotion).not.toHaveBeenCalled();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Buy milk' }));
+  expect(playMotion).toHaveBeenLastCalledWith({
+    taskId: 'task-1',
+    direction: 'complete',
+    token: 1,
+  });
+
+  fireEvent.click(screen.getByRole('button', { name: 'Buy milk' }));
+  expect(playMotion).toHaveBeenLastCalledWith({
+    taskId: 'task-1',
+    direction: 'reopen',
+    token: 2,
+  });
+});
 
 describe('sticky-note task interface', () => {
   it('renders the cat as decoration and exposes task rows to the motion controller', () => {
