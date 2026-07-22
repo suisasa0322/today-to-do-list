@@ -87,25 +87,37 @@ test('adds, completes, deletes, and restores a task after restart', async ({ pag
 
   const task = page.getByRole('button', { name: 'Buy milk' });
   await expect(task).toHaveClass(/task--open/);
-  await expect(task).toHaveCSS('color', 'rgb(119, 119, 119)');
+  await expect(task).toHaveCSS('color', 'rgb(113, 104, 93)');
 
   await page.reload();
 
   const restoredOpenTask = page.getByRole('button', { name: 'Buy milk' });
   await expect(restoredOpenTask).toHaveClass(/task--open/);
-  await expect(restoredOpenTask).toHaveCSS('color', 'rgb(119, 119, 119)');
+  await expect(restoredOpenTask).toHaveCSS('color', 'rgb(113, 104, 93)');
+
+  const taskRow = page.getByRole('listitem', { name: 'Buy milk' });
 
   await restoredOpenTask.click();
-  await expect(restoredOpenTask).toHaveClass(/task--done/);
-  await expect(restoredOpenTask).toHaveCSS('text-decoration-line', 'line-through');
+  await expect(taskRow).toHaveAttribute('data-motion-direction', 'complete');
+  await expect(page.getByRole('button', { name: 'Buy milk' })).toHaveClass(/task--done/);
+
+  await expect(taskRow).not.toHaveAttribute('data-motion-direction', 'complete');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.getByRole('button', { name: 'Buy milk' }).click();
+  await expect(taskRow).toHaveAttribute('data-motion-direction', 'reopen');
+  await expect(taskRow).toHaveClass(/task--motion-reduced/);
+  await expect(page.getByRole('button', { name: 'Buy milk' })).toHaveClass(/task--open/);
+
+  await expect(taskRow).not.toHaveAttribute('data-motion-direction', 'reopen');
+  await page.getByRole('button', { name: 'Buy milk' }).click();
+  await expect(page.getByRole('button', { name: 'Buy milk' })).toHaveClass(/task--done/);
 
   await page.reload();
 
   const restoredDoneTask = page.getByRole('button', { name: 'Buy milk' });
   await expect(restoredDoneTask).toHaveClass(/task--done/);
-  await expect(restoredDoneTask).toHaveCSS('text-decoration-line', 'line-through');
+  await expect(page.getByRole('listitem', { name: 'Buy milk' })).not.toHaveAttribute('data-motion-direction');
 
-  const taskRow = page.getByRole('listitem', { name: 'Buy milk' });
   const deleteButton = page.getByRole('button', { name: 'Delete Buy milk' });
   await expect(deleteButton).toHaveCSS('opacity', '0');
   await expect(deleteButton).toHaveCSS('pointer-events', 'none');

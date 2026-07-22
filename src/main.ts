@@ -1,11 +1,15 @@
 import "./style.css";
+import './cat-motion.css';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { loadTasks, persistTasks } from './persistence';
 import { renderApp, type AppHandlers } from './render';
+import { createTaskMotionController, type TaskMotion } from './task-motion';
 import { addTask, deleteTask, toggleTask } from './task-store';
 import type { Task } from './types';
 
 const root = document.querySelector<HTMLElement>('#app')!;
+const motionController = createTaskMotionController(root);
+let motionToken = 0;
 let tasks: Task[] = [];
 let saveError = false;
 let loadError = false;
@@ -17,12 +21,16 @@ let closePromise: Promise<void> | undefined;
 
 const editingLocked = () => loadError || lifecycleError || closing;
 
-const render = () => renderApp(root, tasks, handlers);
+const render = () => {
+  motionController.cancel();
+  renderApp(root, tasks, handlers);
+};
 
-const save = (nextTasks: Task[]) => {
+const save = (nextTasks: Task[], motion?: TaskMotion) => {
   tasks = nextTasks;
   saveError = false;
   render();
+  if (motion) motionController.play(motion);
   const snapshot = tasks;
   const version = ++saveVersion;
   saveQueue = saveQueue
@@ -49,7 +57,13 @@ const handlers: AppHandlers = {
   },
   onToggle(id) {
     if (editingLocked()) return;
-    save(toggleTask(tasks, id));
+    const current = tasks.find(task => task.id === id);
+    if (!current) return;
+    save(toggleTask(tasks, id), {
+      taskId: id,
+      direction: current.completed ? 'reopen' : 'complete',
+      token: ++motionToken,
+    });
   },
   onDelete(id) {
     if (editingLocked()) return;
