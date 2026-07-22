@@ -43,6 +43,44 @@ const flushMicrotasks = async () => {
   await Promise.resolve();
 };
 
+const cssRuleBody = (css: string, selector: string): string => {
+  const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = css.match(new RegExp(`${escapedSelector}\\s*\\{([^}]*)\\}`, 's'));
+  expect(match, `Missing CSS rule: ${selector}`).not.toBeNull();
+  return match?.[1] ?? '';
+};
+
+const cssDeclaration = (ruleBody: string, property: string): string => {
+  const escapedProperty = property.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = ruleBody.match(new RegExp(`(?:^|;)\\s*${escapedProperty}\\s*:\\s*([^;]+)`));
+  expect(match, `Missing CSS declaration: ${property}`).not.toBeNull();
+  return match?.[1].trim() ?? '';
+};
+
+type Rgb = [number, number, number];
+
+const parseHexColor = (color: string): Rgb => {
+  expect(color).toMatch(/^#[\da-f]{6}$/i);
+  return [1, 3, 5].map(offset => Number.parseInt(color.slice(offset, offset + 2), 16)) as Rgb;
+};
+
+const relativeLuminance = ([red, green, blue]: Rgb): number => {
+  const linear = [red, green, blue].map(channel => {
+    const srgb = channel / 255;
+    return srgb <= 0.04045 ? srgb / 12.92 : ((srgb + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
+};
+
+const contrastRatio = (foreground: Rgb, background: Rgb): number => {
+  const lighter = Math.max(relativeLuminance(foreground), relativeLuminance(background));
+  const darker = Math.min(relativeLuminance(foreground), relativeLuminance(background));
+  return (lighter + 0.05) / (darker + 0.05);
+};
+
+const composite = (foreground: Rgb, background: Rgb, alpha: number): Rgb =>
+  foreground.map((channel, index) => channel * alpha + background[index] * (1 - alpha)) as Rgb;
+
 const renderHarness = (initialTasks: Task[] = []) => {
   const root = document.querySelector<HTMLElement>('#app')!;
   let tasks = initialTasks;
@@ -133,6 +171,50 @@ describe('sticky-note task interface', () => {
     expect(css).toMatch(
       /\.task__text-effect\s*\{(?=[^}]*overflow:\s*clip;)(?=[^}]*padding-block:\s*12px;)(?=[^}]*margin-block:\s*-12px;)[^}]*\}/s,
     );
+  });
+
+  it('keeps a warm wavy strike on completed text after motion cleanup', async () => {
+    // @ts-expect-error Node types are intentionally absent from this browser application.
+    const { readFileSync } = await import('node:fs');
+    const css = readFileSync('src/style.css', 'utf8');
+    const motionCss = readFileSync('src/cat-motion.css', 'utf8');
+    const completedText = cssRuleBody(css, '.task--done .task__text');
+
+    expect(cssDeclaration(completedText, 'text-decoration')).toBe('line-through');
+    expect(cssDeclaration(completedText, 'text-decoration-line')).toBe('line-through');
+    expect(cssDeclaration(completedText, 'text-decoration-style')).toBe('wavy');
+    expect(cssDeclaration(completedText, 'text-decoration-color')).toBe('#bd745d');
+    expect(cssDeclaration(completedText, 'text-decoration-thickness')).toBe('2px');
+    expect(motionCss).toMatch(
+      /\.task--motion-completing \.task--done \.task__text,\s*\.task--motion-reopening \.task__text\s*\{[^}]*text-decoration-color:\s*transparent;/s,
+    );
+  });
+
+  it('keeps completed text and the eyebrow at WCAG AA contrast', async () => {
+    // @ts-expect-error Node types are intentionally absent from this browser application.
+    const { readFileSync } = await import('node:fs');
+    const css = readFileSync('src/style.css', 'utf8');
+    const base = parseHexColor(cssDeclaration(cssRuleBody(css, ':root'), 'background'));
+    const completed = parseHexColor(
+      cssDeclaration(cssRuleBody(css, '.task--done .task__text'), 'color'),
+    );
+    const eyebrow = parseHexColor(
+      cssDeclaration(cssRuleBody(css, '.sticky-note__eyebrow'), 'color'),
+    );
+    const hover = cssDeclaration(
+      cssRuleBody(css, '.task:hover, .task--hovered, .task:focus-within'),
+      'background',
+    ).match(/^rgb\(\s*(\d+)\s+(\d+)\s+(\d+)\s*\/\s*(\d+)%\s*\)$/);
+    expect(hover, 'Hover background must remain an explicit RGB alpha color').not.toBeNull();
+    const hoverBackground = composite(
+      [Number(hover?.[1]), Number(hover?.[2]), Number(hover?.[3])],
+      base,
+      Number(hover?.[4]) / 100,
+    );
+
+    expect(contrastRatio(completed, base)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(completed, hoverBackground)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(eyebrow, base)).toBeGreaterThanOrEqual(4.5);
   });
 
   it('adds a task when Enter is pressed', () => {

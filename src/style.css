@@ -33,7 +33,7 @@ body {
 .sticky-note__eyebrow {
   width: calc(100% - 120px);
   margin: 0 0 4px;
-  color: #a97357;
+  color: #81503e;
   font-size: .62rem;
   font-weight: 750;
   letter-spacing: .14em;
@@ -56,8 +56,7 @@ body {
 .task button { border: 0; color: #71685d; background: transparent; font: inherit; }
 .task__toggle { display: flex; flex: 1; gap: 10px; align-items: center; min-width: 0; padding: 8px 5px; text-align: left; cursor: pointer; }
 .task--open { color: #71685d; }
-.task--done { color: #9a8e7d; }
-.task--done .task__text { text-decoration: line-through; text-decoration-color: #bd745d; text-decoration-thickness: 2px; }
+.task--done .task__text { color: #746457; text-decoration: line-through; text-decoration-line: line-through; text-decoration-color: #bd745d; text-decoration-style: wavy; text-decoration-thickness: 2px; text-decoration-skip-ink: none; }
 .task__indicator { display: grid; flex: 0 0 21px; place-items: center; width: 21px; height: 21px; box-sizing: border-box; border: 1.5px solid #9c907b; border-radius: 50%; font-size: .78rem; line-height: 1; text-decoration: none; }
 .task--done .task__indicator { color: #fff9e8; background: #c98768; border-color: #c98768; }
 .task__text { overflow-wrap: anywhere; }
