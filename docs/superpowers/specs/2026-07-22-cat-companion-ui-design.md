@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-22
 
-**Status:** Approved design; awaiting written-spec review
+**Status:** Approved for implementation
 
 **Application:** Today To Do List
 
