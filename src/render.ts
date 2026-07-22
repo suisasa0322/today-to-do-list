@@ -1,3 +1,7 @@
+import catSwipePawUrl from './assets/cat-swipe-paw.png';
+import catTopperBlinkUrl from './assets/cat-topper-blink.png';
+import catTopperEarTwitchUrl from './assets/cat-topper-ear-twitch.png';
+import catTopperOpenUrl from './assets/cat-topper-open.png';
 import type { Task } from './types';
 
 export type AppHandlers = {
@@ -10,9 +14,31 @@ export type AppHandlers = {
   editingLocked?: boolean;
 };
 
+const makeCatCompanion = (): HTMLElement => {
+  const companion = document.createElement('div');
+  companion.className = 'cat-companion';
+  companion.setAttribute('aria-hidden', 'true');
+
+  const frames = [
+    ['cat-companion__frame cat-companion__frame--open', catTopperOpenUrl],
+    ['cat-companion__frame cat-companion__frame--blink', catTopperBlinkUrl],
+    ['cat-companion__frame cat-companion__frame--ear', catTopperEarTwitchUrl],
+  ] as const;
+
+  frames.forEach(([className, source]) => {
+    const image = document.createElement('img');
+    image.className = className;
+    image.src = source;
+    image.alt = '';
+    companion.append(image);
+  });
+  return companion;
+};
+
 const makeTaskRow = (task: Task, handlers: AppHandlers): HTMLLIElement => {
   const row = document.createElement('li');
   row.className = 'task';
+  row.dataset.taskId = task.id;
   row.setAttribute('aria-label', task.text);
   row.addEventListener('mouseenter', () => row.classList.add('task--hovered'));
   row.addEventListener('mouseleave', () => row.classList.remove('task--hovered'));
@@ -30,9 +56,22 @@ const makeTaskRow = (task: Task, handlers: AppHandlers): HTMLLIElement => {
   indicator.setAttribute('aria-hidden', 'true');
   indicator.textContent = task.completed ? '✓' : '';
 
+  const textEffect = document.createElement('span');
+  textEffect.className = 'task__text-effect';
+
   const text = document.createElement('span');
   text.className = 'task__text';
   text.textContent = task.text;
+
+  const strike = document.createElement('span');
+  strike.className = 'task__strike';
+  strike.setAttribute('aria-hidden', 'true');
+
+  const paw = document.createElement('img');
+  paw.className = 'task__swipe-paw';
+  paw.src = catSwipePawUrl;
+  paw.alt = '';
+  paw.setAttribute('aria-hidden', 'true');
 
   const remove = document.createElement('button');
   remove.type = 'button';
@@ -42,7 +81,8 @@ const makeTaskRow = (task: Task, handlers: AppHandlers): HTMLLIElement => {
   remove.textContent = '×';
   remove.addEventListener('click', () => handlers.onDelete(task.id));
 
-  toggle.append(indicator, text);
+  textEffect.append(text, strike, paw);
+  toggle.append(indicator, textEffect);
   row.append(toggle, remove);
   return row;
 };
@@ -53,8 +93,14 @@ export const renderApp = (root: HTMLElement, tasks: Task[], handlers: AppHandler
   const shell = document.createElement('section');
   shell.className = 'sticky-note';
 
+  const header = document.createElement('header');
+  header.className = 'sticky-note__header';
+  const eyebrow = document.createElement('p');
+  eyebrow.className = 'sticky-note__eyebrow';
+  eyebrow.textContent = 'A little plan for today';
   const heading = document.createElement('h1');
   heading.textContent = 'Today To Do List';
+  header.append(eyebrow, heading, makeCatCompanion());
 
   const list = document.createElement('ul');
   list.className = 'task-list';
@@ -91,6 +137,6 @@ export const renderApp = (root: HTMLElement, tasks: Task[], handlers: AppHandler
   });
   label.append(labelText, input);
   footer.append(status, label);
-  shell.append(heading, list, footer);
+  shell.append(header, list, footer);
   root.append(shell);
 };

@@ -70,6 +70,18 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 describe('sticky-note task interface', () => {
+  it('renders the cat as decoration and exposes task rows to the motion controller', () => {
+    renderHarness([milk]);
+    const companion = document.querySelector<HTMLElement>('.cat-companion')!;
+    const row = screen.getByRole('listitem', { name: 'Buy milk' });
+    expect(companion.getAttribute('aria-hidden')).toBe('true');
+    expect(companion.querySelectorAll('img')).toHaveLength(3);
+    expect(row.getAttribute('data-task-id')).toBe('task-1');
+    expect(within(row).getByRole('button', { name: 'Buy milk' })).toBeTruthy();
+    expect(row.querySelector('.task__strike')?.getAttribute('aria-hidden')).toBe('true');
+    expect(row.querySelector<HTMLImageElement>('.task__swipe-paw')?.alt).toBe('');
+  });
+
   it('adds a task when Enter is pressed', () => {
     renderHarness();
     const input = screen.getByLabelText('New task');
